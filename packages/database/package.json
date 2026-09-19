@@ -1,0 +1,13 @@
+{
+  "name": "@greylist/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "dotenv": "^18.0.1",
+    "prisma": "7.10.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.10.0"
+  }
+}
