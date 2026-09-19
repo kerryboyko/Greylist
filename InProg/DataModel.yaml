@@ -1,0 +1,33 @@
+
+# Examples
+
+
+sources:
+  - id: who
+    name: World Health Organization
+    url: https://www.who.int
+    trust: primary
+
+    scopes:
+      include:
+        - "/**"
+      exclude:
+        - "/news-room/**"
+
+    expertise:
+      - medicine
+      - public-health
+
+    notes: >
+      Primary source for international public-health
+      guidance and statistics.
+
+  - id: reddit
+    name: Reddit
+    url: https://www.reddit.com
+    trust: suppressed
+
+  - id: stormfront
+    name: Stormfront
+    url: https://www.stormfront.org
+    trust: excluded

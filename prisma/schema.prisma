@@ -1,0 +1,201 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DB_CONNECTION_STRING")
+  extensions = [citext(schema: "public"), pg_cron(schema: "extensions"), uuid_ossp(map: "uuid-ossp", schema: "extensions")]
+}
+
+enum Classification {
+  PRIMARY
+  SUPPRESSED
+  EXCLUDED
+}
+
+/* 
+  PRIMARY      human decision
+  SUPPRESSED   human decision
+  EXCLUDED     human decision
+
+  CITED        derived from links
+  UNKNOWN      absence of either condition 
+*/
+
+model User {
+  id    BigInt @id @default(autoincrement())
+  login String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviewedSources SourcePolicy[]
+}
+
+// --- SOURCES / PAGES ---
+
+model SourcePolicy {
+  id BigInt @id @default(autoincrement())
+
+  // What this policy applies to
+  domain String
+
+  classification Classification
+
+  scopes    String[]
+  expertise String[]
+
+  rationale String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviewedAt DateTime?
+  reviewerId BigInt?
+  reviewer   User?     @relation(fields: [reviewerId], references: [id])
+
+  @@unique([domain])
+}
+
+model Page {
+  id BigInt @id @default(autoincrement())
+
+  url          String @unique
+  canonicalUrl String?
+  domain       String
+
+  title   String?
+  content String?
+
+  httpStatus  Int?
+  contentHash String?
+  fetchedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outgoingLinks Link[] @relation("SourcePage")
+  incomingLinks Link[] @relation("TargetPage")
+
+  crawlAttempts CrawlAttempt[]
+  discoveredCrawlJobs CrawlJob[]
+
+  @@index([domain])
+}
+
+model Link {
+  id BigInt @id @default(autoincrement())
+
+  fromPageId BigInt
+  fromPage   Page @relation(
+    "SourcePage",
+    fields: [fromPageId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  toPageId BigInt?
+  toPage   Page? @relation(
+    "TargetPage",
+    fields: [toPageId],
+    references: [id],
+    onDelete: SetNull
+  )
+
+  toUrl      String
+  anchorText String?
+  // surroundingText ? 
+
+  discoveredAt DateTime @default(now())
+
+  @@index([fromPageId])
+  @@index([toPageId])
+  @@index([toUrl])
+}
+
+// --- CRAWL ---
+
+enum CrawlJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+/* 
+
+  200 → COMPLETED
+  301 → COMPLETED
+  404 → COMPLETED
+  410 → COMPLETED
+
+  DNS failure → FAILED
+  timeout → FAILED
+  TLS failure → FAILED
+
+*/
+
+enum CrawlReason {
+  PRIMARY
+  CITED
+  RECRAWL
+}
+
+model CrawlJob {
+  id BigInt @id @default(autoincrement())
+
+  url String
+
+  reason CrawlReason
+  status CrawlJobStatus @default(PENDING)
+
+  discoveredFromPageId BigInt?
+  discoveredFromPage   Page? @relation(
+    fields: [discoveredFromPageId],
+    references: [id],
+    onDelete: SetNull
+  )
+
+  priority Int @default(0)
+
+  scheduledAt DateTime @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attempts CrawlAttempt[]
+
+  @@index([status, priority, scheduledAt])
+  @@index([url])
+}
+
+model CrawlAttempt {
+  id BigInt @id @default(autoincrement())
+
+  jobId BigInt
+  job   CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  url String
+
+  pageId BigInt?
+  page   Page? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+
+  httpStatus Int?
+  error      String?
+
+  contentType String?
+  bytes       Int?
+  durationMs  Int?
+
+  @@index([jobId])
+  @@index([url])
+  @@index([pageId])
+  @@index([startedAt])
+}
