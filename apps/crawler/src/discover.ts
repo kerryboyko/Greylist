@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { prisma } from "@greylist/database";
 import { resolveLink } from "./links/resolveLink.js";
 import { isWikipediaArticle } from "./policy/isWikipediaArticle.js";
+import { claimCrawlJob } from "./queue/claimCrawlJob.js";
 
 async function enqueueLink(eligibleLink: string): Promise<"ok" | "err"> {
   try {
@@ -74,6 +75,10 @@ async function main(): Promise<void> {
 
     console.info(`Link Crawl Status '${linkCrawlStatus}'`);
   }
+
+  const claimedJob = await claimCrawlJob();
+
+  console.info("Claimed job:", claimedJob);
 }
 
 main();
