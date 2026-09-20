@@ -181,6 +181,9 @@ importers:
 
   apps/crawler:
     dependencies:
+      '@greylist/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@greylist/shared':
         specifier: workspace:*
         version: link:../../packages/shared

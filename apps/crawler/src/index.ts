@@ -1,45 +1,86 @@
 import * as cheerio from "cheerio";
-import { normalizeUrl } from "@greylist/shared";
+import { prisma } from "@greylist/database";
 import { resolveLink } from "./links/resolveLink.js";
-
 import { isWikipediaArticle } from "./policy/isWikipediaArticle.js";
 
-const url = "https://en.wikipedia.org/wiki/Main_Page";
+async function enqueueLink(eligibleLink: string): Promise<"ok" | "err"> {
+  try {
+    const existingJob = await prisma.crawlJob.findFirst({
+      where: {
+        url: eligibleLink,
+        status: {
+          in: ["PENDING", "RUNNING"],
+        },
+      },
+    });
+    if (existingJob) {
+      console.info(`Crawl job already exists for ${eligibleLink}`);
+      return "ok";
+    }
+    const crawlJob = await prisma.crawlJob.create({
+      data: {
+        url: eligibleLink,
+        reason: "PRIMARY",
+      },
+    });
 
-console.info(`Fetching ${url}`);
+    console.info(`Created crawl job ${crawlJob.id} for ${crawlJob.url}`);
+    return "ok";
+  } catch (e) {
+    console.error(e);
+    return "err";
+  }
+}
 
-const response = await fetch(url);
+async function main(): Promise<void> {
+  const sourceCount = await prisma.sourcePolicy.count();
 
-console.info(`Status: ${response.status}`);
-console.info(`Content-Type: ${response.headers.get("content-type")}`);
+  console.info(`Source policies: ${sourceCount}`);
 
-const html = await response.text();
+  const url = "https://en.wikipedia.org/wiki/Main_Page";
 
-console.info(`Received ${html.length} characters`);
+  console.info(`Fetching ${url}`);
 
-const $ = cheerio.load(html);
+  const response = await fetch(url);
 
-console.info(`Title: ${$("title").text()}`);
+  console.info(`Status: ${response.status}`);
+  console.info(`Content-Type: ${response.headers.get("content-type")}`);
 
-const canonicalUrl = $("link[rel='canonical']").attr("href");
+  const html = await response.text();
 
-console.info(`Canonical URL: ${canonicalUrl}`);
+  console.info(`Received ${html.length} characters`);
 
-const links = $("a[href]")
-  .map((_, element) => $(element).attr("href"))
-  .get();
-console.info(`Found ${links.length} links`);
+  const $ = cheerio.load(html);
 
-const resolvedLinks = links
-  .map((href) => resolveLink(href, url))
-  .filter((link): link is string => link !== null);
+  console.info(`Title: ${$("title").text()}`);
 
-const uniqueLinks = [...new Set(resolvedLinks)];
+  const canonicalUrl = $("link[rel='canonical']").attr("href");
 
-console.info(`Resolved ${resolvedLinks.length} HTTP(S) links`);
-console.info(`Unique: ${uniqueLinks.length}`);
+  console.info(`Canonical URL: ${canonicalUrl}`);
 
-const eligibleLinks = uniqueLinks.filter(isWikipediaArticle);
+  const links = $("a[href]")
+    .map((_, element) => $(element).attr("href"))
+    .get();
+  console.info(`Found ${links.length} links`);
 
-console.info(`Eligible Wikipedia articles: ${eligibleLinks.length}`);
+  const resolvedLinks = links
+    .map((href) => resolveLink(href, url))
+    .filter((link): link is string => link !== null);
 
+  const uniqueLinks = [...new Set(resolvedLinks)];
+
+  console.info(`Resolved ${resolvedLinks.length} HTTP(S) links`);
+  console.info(`Unique: ${uniqueLinks.length}`);
+
+  const eligibleLinks = uniqueLinks.filter(isWikipediaArticle);
+
+  console.info(`Eligible Wikipedia articles: ${eligibleLinks.length}`);
+
+  const firstEligibleLink = eligibleLinks[0];
+  if (firstEligibleLink) {
+    const linkCrawlStatus = await enqueueLink(firstEligibleLink);
+    console.log(`Link Crawl Status '${linkCrawlStatus}'`);
+  }
+}
+
+main();

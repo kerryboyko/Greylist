@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@greylist/database": "workspace:*",
     "@greylist/shared": "workspace:*",
     "cheerio": "^1.2.0"
   }
