@@ -5,26 +5,18 @@ import { isWikipediaArticle } from "./policy/isWikipediaArticle.js";
 
 async function enqueueLink(eligibleLink: string): Promise<"ok" | "err"> {
   try {
-    const existingJob = await prisma.crawlJob.findFirst({
+    const crawlJob = await prisma.crawlJob.upsert({
       where: {
         url: eligibleLink,
-        status: {
-          in: ["PENDING", "RUNNING"],
-        },
       },
-    });
-    if (existingJob) {
-      console.info(`Crawl job already exists for ${eligibleLink}`);
-      return "ok";
-    }
-    const crawlJob = await prisma.crawlJob.create({
-      data: {
+      update: {},
+      create: {
         url: eligibleLink,
         reason: "PRIMARY",
       },
     });
 
-    console.info(`Created crawl job ${crawlJob.id} for ${crawlJob.url}`);
+    console.info(`Crawl job ${crawlJob.id} for ${crawlJob.url}`);
     return "ok";
   } catch (e) {
     console.error(e);
@@ -76,10 +68,11 @@ async function main(): Promise<void> {
 
   console.info(`Eligible Wikipedia articles: ${eligibleLinks.length}`);
 
-  const firstEligibleLink = eligibleLinks[0];
-  if (firstEligibleLink) {
-    const linkCrawlStatus = await enqueueLink(firstEligibleLink);
-    console.log(`Link Crawl Status '${linkCrawlStatus}'`);
+  for (const eligibleLink of eligibleLinks) {
+    // no Promise.all([]) concurrency for now.
+    const linkCrawlStatus = await enqueueLink(eligibleLink);
+
+    console.info(`Link Crawl Status '${linkCrawlStatus}'`);
   }
 }
 

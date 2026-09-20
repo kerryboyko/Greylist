@@ -135,7 +135,7 @@ enum CrawlReason {
 model CrawlJob {
   id BigInt @id @default(autoincrement())
 
-  url String
+  url String @unique
 
   reason CrawlReason
   status CrawlJobStatus @default(PENDING)
@@ -155,7 +155,6 @@ model CrawlJob {
   attempts CrawlAttempt[]
 
   @@index([status, priority, scheduledAt])
-  @@index([url])
 }
 
 model CrawlAttempt {
