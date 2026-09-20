@@ -1,0 +1,10 @@
+{
+  "name": "@greylist/crawler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@greylist/shared": "workspace:*",
+    "cheerio": "^1.2.0"
+  }
+}
