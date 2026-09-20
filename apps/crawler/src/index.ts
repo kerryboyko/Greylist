@@ -43,4 +43,3 @@ const eligibleLinks = uniqueLinks.filter(isWikipediaArticle);
 
 console.info(`Eligible Wikipedia articles: ${eligibleLinks.length}`);
 
-console.info(eligibleLinks);
