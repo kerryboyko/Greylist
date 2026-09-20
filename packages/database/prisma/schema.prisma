@@ -19,9 +19,9 @@ enum Classification {
 }
 
 /**
- * PRIMARY      human decision
- * SUPPRESSED   human decision
- * EXCLUDED     human decision
+ * PRIMARY      human decision - this is a source a human at Greylist considers worth sending a human being to
+ * SUPPRESSED   human decision - this is a source that a human at Greylist considers authentic but non-authoritative (i.e. Reddit) and so does not include them by default
+ * EXCLUDED     human decision - this is a source that a human at Greylist considers worth keeping a human being away from. 
  * CITED        derived from links
  * UNKNOWN      absence of either condition
  */
