@@ -31,6 +31,9 @@ export async function parseWikipediaResponse(
   const canonicalUrl = $("link[rel='canonical']").attr("href") ?? null;
 
   const article = $(".mw-parser-output").clone();
+  if (article.length === 0) {
+    throw new Error("Wikipedia article content container not found");
+  }
 
   // .remove() returns the removed elements, so keep the original
   // article selection and mutate it separately.
@@ -127,58 +130,72 @@ async function main(): Promise<void> {
     const pageUrl = new URL(job.url);
     const fetchedAt = new Date();
 
-    const page = await prisma.page.upsert({
-      where: {
-        url: job.url,
-      },
-      create: {
-        url: job.url,
-        canonicalUrl,
-        domain: pageUrl.hostname,
-        title,
-        content,
-        contentHash,
-        httpStatus: response.status,
-        fetchedAt,
-      },
-      update: {
-        canonicalUrl,
-        title,
-        content,
-        contentHash,
-        httpStatus: response.status,
-        fetchedAt,
-      },
-    });
-
-    // no Promise.all() yet.
-    // on a recrawl, if a link has disappeared from the page,
-    // these upserts won't delete its old Link row.
-    const linksObservedAt = new Date();
-
-    for (const link of links) {
-      await prisma.link.upsert({
+    const page = await prisma.$transaction(async (tx) => {
+      const observedUrls = links.map((link) => link.url);
+      const pageUpsert = await tx.page.upsert({
         where: {
-          fromPageId_toUrl: {
-            fromPageId: page.id,
-            toUrl: link.url,
-          },
+          url: job.url,
         },
         create: {
-          fromPageId: page.id,
-          toUrl: link.url,
-          anchorTexts: link.anchorTexts,
-          firstSeenAt: linksObservedAt,
-          lastSeenAt: linksObservedAt,
-          isPresent: true,
+          url: job.url,
+          canonicalUrl,
+          domain: pageUrl.hostname,
+          title,
+          content,
+          contentHash,
+          httpStatus: response.status,
+          fetchedAt,
         },
         update: {
-          anchorTexts: link.anchorTexts,
-          lastSeenAt: linksObservedAt,
-          isPresent: true,
+          canonicalUrl,
+          title,
+          content,
+          contentHash,
+          httpStatus: response.status,
+          fetchedAt,
         },
       });
-    }
+
+      // no Promise.all() yet.
+
+      for (const link of links) {
+        await tx.link.upsert({
+          where: {
+            fromPageId_toUrl: {
+              fromPageId: pageUpsert.id,
+              toUrl: link.url,
+            },
+          },
+          create: {
+            fromPageId: pageUpsert.id,
+            toUrl: link.url,
+            anchorTexts: link.anchorTexts,
+            firstSeenAt: fetchedAt,
+            lastSeenAt: fetchedAt,
+            isPresent: true,
+          },
+          update: {
+            anchorTexts: link.anchorTexts,
+            lastSeenAt: fetchedAt,
+            isPresent: true,
+          },
+        });
+      }
+      await tx.link.updateMany({
+        where: {
+          fromPageId: pageUpsert.id,
+          isPresent: true,
+          toUrl: {
+            notIn: observedUrls,
+          },
+        },
+        data: {
+          isPresent: false,
+        },
+      });
+      return pageUpsert;
+    });
+
     const finishedAt = new Date();
 
     await prisma.crawlAttempt.update({
