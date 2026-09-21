@@ -11,14 +11,14 @@ describe("resolveLink", () => {
   });
 
   it("resolves protocol-relative links", () => {
-    expect(
-      resolveLink("//example.com/article", sourceUrl),
-    ).toBe("https://example.com/article");
+    expect(resolveLink("//example.com/article", sourceUrl)).toBe(
+      "https://example.com/article",
+    );
   });
 
-  it("removes fragments after resolving", () => {
-    expect(resolveLink("#bodyContent", sourceUrl)).toBe(
-      "https://en.wikipedia.org/wiki/Main_Page",
+  it("removes fragments from links to other documents", () => {
+    expect(resolveLink("/wiki/Toronto#History", sourceUrl)).toBe(
+      "https://en.wikipedia.org/wiki/Toronto",
     );
   });
 
@@ -30,5 +30,11 @@ describe("resolveLink", () => {
 
   it("rejects non-HTTP protocols", () => {
     expect(resolveLink("mailto:someone@example.com", sourceUrl)).toBeNull();
+  });
+
+  it("rejects fragment-only links", () => {
+    expect(
+      resolveLink("#cite_note-7", "https://en.wikipedia.org/wiki/Foo"),
+    ).toBe(null);
   });
 });

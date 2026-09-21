@@ -8,12 +8,17 @@ import { isWikipediaArticle } from "./policy/isWikipediaArticle.js";
 
 /* TODO: This is a refactor target. */
 
+interface ParsedLink {
+  url: string;
+  anchorTexts: string[];
+}
+
 interface ParsedWikipediaResponse {
   title: string;
   canonicalUrl: string | null;
   content: string;
   contentHash: string;
-  links: string[];
+  links: ParsedLink[];
 }
 
 export async function parseWikipediaResponse(
@@ -24,26 +29,52 @@ export async function parseWikipediaResponse(
   const $ = cheerio.load(html);
   const title = $("title").text();
   const canonicalUrl = $("link[rel='canonical']").attr("href") ?? null;
-  const content = $(".mw-parser-output")
-    .clone()
-    .find("style, script, noscript")
-    .remove()
-    .text()
-    .replace(/\s+/g, " ")
-    .trim();
+
+  const article = $(".mw-parser-output").clone();
+
+  // .remove() returns the removed elements, so keep the original
+  // article selection and mutate it separately.
+  article.find("style, script, noscript").remove();
+
+  const content = article.text().replace(/\s+/g, " ").trim();
 
   const contentHash = createHash("sha256").update(content).digest("hex");
 
-  const links = [
-    ...new Set(
-      $("a[href]")
-        .map((_, element) => $(element).attr("href"))
-        .get()
-        .map((href) => resolveLink(href, jobUrl))
-        .filter((url): url is string => url !== null)
-        .filter(isWikipediaArticle),
-    ),
-  ];
+  const linksByUrl = new Map<string, Set<string>>();
+
+  article.find("a[href]").each((_, element) => {
+    const href = $(element).attr("href");
+
+    if (!href) {
+      return;
+    }
+
+    const url = resolveLink(href, jobUrl);
+
+    if (!url || !isWikipediaArticle(url)) {
+      return;
+    }
+
+    const anchorText = $(element).text().replace(/\s+/g, " ").trim();
+
+    let anchorTexts = linksByUrl.get(url);
+
+    if (!anchorTexts) {
+      anchorTexts = new Set<string>();
+      linksByUrl.set(url, anchorTexts);
+    }
+
+    if (anchorText) {
+      anchorTexts.add(anchorText);
+    }
+  });
+
+  const links: ParsedLink[] = [...linksByUrl.entries()].map(
+    ([url, anchorTexts]) => ({
+      url,
+      anchorTexts: [...anchorTexts],
+    }),
+  );
 
   return {
     title,
@@ -83,7 +114,8 @@ async function main(): Promise<void> {
     console.info(`Found ${links.length} resolved links`);
 
     for (const [i, link] of links.slice(0, 10).entries()) {
-      console.info(`  ${i} - ${link}`);
+      console.info(`  ${i} - ${link.url}`);
+      console.info(`      ${JSON.stringify(link.anchorTexts)}`);
     }
 
     console.info(`Content hash: ${contentHash}`);
@@ -119,6 +151,34 @@ async function main(): Promise<void> {
       },
     });
 
+    // no Promise.all() yet.
+    // on a recrawl, if a link has disappeared from the page,
+    // these upserts won't delete its old Link row.
+    const linksObservedAt = new Date();
+
+    for (const link of links) {
+      await prisma.link.upsert({
+        where: {
+          fromPageId_toUrl: {
+            fromPageId: page.id,
+            toUrl: link.url,
+          },
+        },
+        create: {
+          fromPageId: page.id,
+          toUrl: link.url,
+          anchorTexts: link.anchorTexts,
+          firstSeenAt: linksObservedAt,
+          lastSeenAt: linksObservedAt,
+          isPresent: true,
+        },
+        update: {
+          anchorTexts: link.anchorTexts,
+          lastSeenAt: linksObservedAt,
+          isPresent: true,
+        },
+      });
+    }
     const finishedAt = new Date();
 
     await prisma.crawlAttempt.update({

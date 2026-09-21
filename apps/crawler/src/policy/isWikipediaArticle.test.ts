@@ -20,6 +20,14 @@ describe("isWikipediaArticle", () => {
     );
   });
 
+  it("rejects red links", () => {
+    expect(
+      isWikipediaArticle(
+        "https://en.wikipedia.org/wiki/Ram%C3%B3n_Pan%C3%A9?action=edit&redlink=1",
+      ),
+    ).toBe(false);
+  });
+
   it("rejects Wikipedia namespace pages", () => {
     expect(
       isWikipediaArticle("https://en.wikipedia.org/wiki/Wikipedia:About"),

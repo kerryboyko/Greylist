@@ -21,7 +21,7 @@ enum Classification {
 /**
  * PRIMARY      human decision - this is a source a human at Greylist considers worth sending a human being to
  * SUPPRESSED   human decision - this is a source that a human at Greylist considers authentic but non-authoritative (i.e. Reddit) and so does not include them by default
- * EXCLUDED     human decision - this is a source that a human at Greylist considers worth keeping a human being away from. 
+ * EXCLUDED     human decision - this is a source that a human at Greylist considers worth keeping a human being away from.
  * CITED        derived from links
  * UNKNOWN      absence of either condition
  */
@@ -95,12 +95,22 @@ model Link {
   toPageId BigInt?
   toPage   Page?   @relation("TargetPage", fields: [toPageId], references: [id], onDelete: SetNull)
 
-  toUrl      String
-  anchorText String?
+  toUrl       String
+  // Anchor texts reflect the most recent successful observation of this edge.
+  // Historical edge existence is preserved, but historical anchor text is not.
+  // If anchor history becomes useful, model observations separately rather
+  // than accumulating stale anchor text here.
+  anchorTexts String[]
   // surroundingText ? 
 
-  discoveredAt DateTime @default(now())
+  firstSeenAt DateTime @default(now())
+  // The last successful crawl in which this edge was actually observed, 
+  // not the time we last checked for it.
+  lastSeenAt  DateTime @default(now())
+  // If a link disappears, we set isPresent = false but do not update lastSeenAt.
+  isPresent   Boolean  @default(true)
 
+  @@unique([fromPageId, toUrl])
   @@index([fromPageId])
   @@index([toPageId])
   @@index([toUrl])

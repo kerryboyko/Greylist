@@ -11,6 +11,10 @@ export function isWikipediaArticle(input: string): boolean {
     return false;
   }
 
+  if (url.searchParams.has("redlink")) {
+    return false;
+  }
+
   const articleName = decodeURIComponent(url.pathname.slice("/wiki/".length));
   const namespace = articleName.split(":", 1)[0];
 
