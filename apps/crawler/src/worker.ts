@@ -1,92 +1,6 @@
-import { createHash } from "node:crypto";
 import { prisma } from "@greylist/database";
 import { claimCrawlJob } from "./queue/claimCrawlJob.js";
-
-import * as cheerio from "cheerio";
-import { resolveLink } from "./links/resolveLink.js";
-import { isWikipediaArticle } from "./policy/isWikipediaArticle.js";
-
-/* TODO: This is a refactor target. */
-
-interface ParsedLink {
-  url: string;
-  anchorTexts: string[];
-}
-
-interface ParsedWikipediaResponse {
-  title: string;
-  canonicalUrl: string | null;
-  content: string;
-  contentHash: string;
-  links: ParsedLink[];
-}
-
-export async function parseWikipediaResponse(
-  response: Response,
-  jobUrl: string,
-): Promise<ParsedWikipediaResponse> {
-  const html = await response.text();
-  const $ = cheerio.load(html);
-  const title = $("title").text();
-  const canonicalUrl = $("link[rel='canonical']").attr("href") ?? null;
-
-  const article = $(".mw-parser-output").clone();
-  if (article.length === 0) {
-    throw new Error("Wikipedia article content container not found");
-  }
-
-  // .remove() returns the removed elements, so keep the original
-  // article selection and mutate it separately.
-  article.find("style, script, noscript").remove();
-
-  const content = article.text().replace(/\s+/g, " ").trim();
-
-  const contentHash = createHash("sha256").update(content).digest("hex");
-
-  const linksByUrl = new Map<string, Set<string>>();
-
-  article.find("a[href]").each((_, element) => {
-    const href = $(element).attr("href");
-
-    if (!href) {
-      return;
-    }
-
-    const url = resolveLink(href, jobUrl);
-
-    if (!url || !isWikipediaArticle(url)) {
-      return;
-    }
-
-    const anchorText = $(element).text().replace(/\s+/g, " ").trim();
-
-    let anchorTexts = linksByUrl.get(url);
-
-    if (!anchorTexts) {
-      anchorTexts = new Set<string>();
-      linksByUrl.set(url, anchorTexts);
-    }
-
-    if (anchorText) {
-      anchorTexts.add(anchorText);
-    }
-  });
-
-  const links: ParsedLink[] = [...linksByUrl.entries()].map(
-    ([url, anchorTexts]) => ({
-      url,
-      anchorTexts: [...anchorTexts],
-    }),
-  );
-
-  return {
-    title,
-    canonicalUrl,
-    content,
-    contentHash,
-    links,
-  };
-}
+import { parseWikipediaResponse } from "./parsers/wikipediaParser.js";
 
 async function main(): Promise<void> {
   const job = await claimCrawlJob();
@@ -112,26 +26,27 @@ async function main(): Promise<void> {
       await parseWikipediaResponse(response, job.url);
 
     // BEGIN diagnostic block;
-    console.info(`Status: ${response.status}`);
-    console.info(`Content-Type: ${response.headers.get("content-type")}`);
-    console.info(`Found ${links.length} resolved links`);
+    // console.info(`Status: ${response.status}`);
+    // console.info(`Content-Type: ${response.headers.get("content-type")}`);
+    // console.info(`Found ${links.length} resolved links`);
 
-    for (const [i, link] of links.slice(0, 10).entries()) {
-      console.info(`  ${i} - ${link.url}`);
-      console.info(`      ${JSON.stringify(link.anchorTexts)}`);
-    }
+    // for (const [i, link] of links.slice(0, 10).entries()) {
+    //   console.info(`  ${i} - ${link.url}`);
+    //   console.info(`      ${JSON.stringify(link.anchorTexts)}`);
+    // }
 
-    console.info(`Content hash: ${contentHash}`);
-    console.info(`Extracted ${content.length} characters of article content`);
-    console.info(content.slice(0, 500));
+    // console.info(`Content hash: ${contentHash}`);
+    // console.info(`Extracted ${content.length} characters of article content`);
+    // console.info(content.slice(0, 500));
     console.info(`Title: ${title} | Canonical URL: ${canonicalUrl}`);
     // END diagnostic block;
 
     const pageUrl = new URL(job.url);
     const fetchedAt = new Date();
-
     const page = await prisma.$transaction(async (tx) => {
       const observedUrls = links.map((link) => link.url);
+
+      // Store the latest successfully fetched snapshot of this page.
       const pageUpsert = await tx.page.upsert({
         where: {
           url: job.url,
@@ -156,9 +71,47 @@ async function main(): Promise<void> {
         },
       });
 
-      // no Promise.all() yet.
+      // Resolve previously discovered links pointing to this page.
+      //
+      // A link may have been discovered before its target Page was crawled,
+      // leaving toPageId null. Now that this Page exists, connect those edges.
+      await tx.link.updateMany({
+        where: {
+          toUrl: pageUpsert.url,
+          toPageId: null,
+        },
+        data: {
+          toPageId: pageUpsert.id,
+        },
+      });
 
+      // Find which outgoing link targets already exist as Pages.
+      //
+      // Doing this once lets us resolve outgoing edges without querying the
+      // Page table separately for every link.
+      const targetPages = await tx.page.findMany({
+        where: {
+          url: {
+            in: observedUrls,
+          },
+        },
+        select: {
+          id: true,
+          url: true,
+        },
+      });
+
+      const targetPageIds = new Map(
+        targetPages.map((page) => [page.url, page.id]),
+      );
+
+      // no Promise.all() yet.
+      // Store every link observed in this crawl.
+      //
+      // Existing edges preserve firstSeenAt while updating their latest
+      // observation. If the target Page already exists, connect it immediately.
       for (const link of links) {
+        const toPageId = targetPageIds.get(link.url) ?? null;
         await tx.link.upsert({
           where: {
             fromPageId_toUrl: {
@@ -168,6 +121,7 @@ async function main(): Promise<void> {
           },
           create: {
             fromPageId: pageUpsert.id,
+            toPageId,
             toUrl: link.url,
             anchorTexts: link.anchorTexts,
             firstSeenAt: fetchedAt,
@@ -175,12 +129,18 @@ async function main(): Promise<void> {
             isPresent: true,
           },
           update: {
+            toPageId,
             anchorTexts: link.anchorTexts,
             lastSeenAt: fetchedAt,
             isPresent: true,
           },
         });
       }
+
+      // Any previously present edge that was not observed in this successful
+      // crawl has disappeared.
+      //
+      // Preserve lastSeenAt: it records the last time the edge actually existed.
       await tx.link.updateMany({
         where: {
           fromPageId: pageUpsert.id,
@@ -249,4 +209,13 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+console.time("Total Worker Execution Time");
+main()
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+    console.timeEnd("Total Worker Execution Time");
+  });
