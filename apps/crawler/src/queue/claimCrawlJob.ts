@@ -13,13 +13,13 @@ export async function claimCrawlJob() {
     UPDATE "CrawlJob"
     SET
       "status" = 'RUNNING',
-      "startedAt" = NOW(),
-      "updatedAt" = NOW()
+      "startedAt" = NOW() AT TIME ZONE 'UTC',
+      "updatedAt" = NOW() AT TIME ZONE 'UTC'
     WHERE "id" = (
       SELECT "id"
       FROM "CrawlJob"
       WHERE "status" = 'PENDING'
-        AND "scheduledAt" <= NOW()
+        AND "scheduledAt" <= NOW() AT TIME ZONE 'UTC'
       ORDER BY "priority" DESC, "scheduledAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1

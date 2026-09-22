@@ -1,8 +1,15 @@
 import { prisma } from "@greylist/database";
 import { claimCrawlJob } from "./queue/claimCrawlJob.js";
 import { parseWikipediaResponse } from "./parsers/wikipediaParser.js";
+import { enqueuePrimaryLinks } from "./queue/enqueuePrimaryLinks.js";
+import { ONE_MINUTE } from "./constants.js";
+import { CRAWLER_USER_AGENT } from "./config.js";
+
+import type { Prisma } from "@greylist/database";
 
 async function main(): Promise<void> {
+  let httpStatus: number | null = null;
+
   const job = await claimCrawlJob();
   if (!job) {
     console.info(`No crawl jobs available`);
@@ -20,7 +27,22 @@ async function main(): Promise<void> {
   );
 
   try {
-    const response = await fetch(job.url);
+    const response = await fetch(job.url, {
+      headers: {
+        "User-Agent": CRAWLER_USER_AGENT,
+      },
+    });
+
+    httpStatus = response.status;
+
+    // clean distinction - network failure? fetch throws.
+    // HTTP failure? Worker deliberately throws.
+    // HTTP success, but malformed / unexpected Wikipedia page? Parser throws.
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status} ${response.statusText} for ${job.url}`,
+      );
+    }
 
     const { title, canonicalUrl, content, contentHash, links } =
       await parseWikipediaResponse(response, job.url);
@@ -43,118 +65,132 @@ async function main(): Promise<void> {
 
     const pageUrl = new URL(job.url);
     const fetchedAt = new Date();
-    const page = await prisma.$transaction(async (tx) => {
-      const observedUrls = links.map((link) => link.url);
+    const page = await prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        const observedUrls = links.map((link) => link.url);
 
-      // Store the latest successfully fetched snapshot of this page.
-      const pageUpsert = await tx.page.upsert({
-        where: {
-          url: job.url,
-        },
-        create: {
-          url: job.url,
-          canonicalUrl,
-          domain: pageUrl.hostname,
-          title,
-          content,
-          contentHash,
-          httpStatus: response.status,
-          fetchedAt,
-        },
-        update: {
-          canonicalUrl,
-          title,
-          content,
-          contentHash,
-          httpStatus: response.status,
-          fetchedAt,
-        },
-      });
-
-      // Resolve previously discovered links pointing to this page.
-      //
-      // A link may have been discovered before its target Page was crawled,
-      // leaving toPageId null. Now that this Page exists, connect those edges.
-      await tx.link.updateMany({
-        where: {
-          toUrl: pageUpsert.url,
-          toPageId: null,
-        },
-        data: {
-          toPageId: pageUpsert.id,
-        },
-      });
-
-      // Find which outgoing link targets already exist as Pages.
-      //
-      // Doing this once lets us resolve outgoing edges without querying the
-      // Page table separately for every link.
-      const targetPages = await tx.page.findMany({
-        where: {
-          url: {
-            in: observedUrls,
-          },
-        },
-        select: {
-          id: true,
-          url: true,
-        },
-      });
-
-      const targetPageIds = new Map(
-        targetPages.map((page) => [page.url, page.id]),
-      );
-
-      // no Promise.all() yet.
-      // Store every link observed in this crawl.
-      //
-      // Existing edges preserve firstSeenAt while updating their latest
-      // observation. If the target Page already exists, connect it immediately.
-      for (const link of links) {
-        const toPageId = targetPageIds.get(link.url) ?? null;
-        await tx.link.upsert({
+        // Store the latest successfully fetched snapshot of this page.
+        const pageUpsert = await tx.page.upsert({
           where: {
-            fromPageId_toUrl: {
-              fromPageId: pageUpsert.id,
-              toUrl: link.url,
-            },
+            url: job.url,
           },
           create: {
-            fromPageId: pageUpsert.id,
-            toPageId,
-            toUrl: link.url,
-            anchorTexts: link.anchorTexts,
-            firstSeenAt: fetchedAt,
-            lastSeenAt: fetchedAt,
-            isPresent: true,
+            url: job.url,
+            canonicalUrl,
+            domain: pageUrl.hostname,
+            title,
+            content,
+            contentHash,
+            httpStatus: response.status,
+            fetchedAt,
           },
           update: {
-            toPageId,
-            anchorTexts: link.anchorTexts,
-            lastSeenAt: fetchedAt,
-            isPresent: true,
+            canonicalUrl,
+            title,
+            content,
+            contentHash,
+            httpStatus: response.status,
+            fetchedAt,
           },
         });
-      }
 
-      // Any previously present edge that was not observed in this successful
-      // crawl has disappeared.
-      //
-      // Preserve lastSeenAt: it records the last time the edge actually existed.
-      await tx.link.updateMany({
-        where: {
-          fromPageId: pageUpsert.id,
-          isPresent: true,
-          toUrl: {
-            notIn: observedUrls,
+        // Resolve previously discovered links pointing to this page.
+        //
+        // A link may have been discovered before its target Page was crawled,
+        // leaving toPageId null. Now that this Page exists, connect those edges.
+        await tx.link.updateMany({
+          where: {
+            toUrl: pageUpsert.url,
+            toPageId: null,
           },
-        },
-        data: {
-          isPresent: false,
-        },
-      });
-      return pageUpsert;
-    });
+          data: {
+            toPageId: pageUpsert.id,
+          },
+        });
+
+        // Find which outgoing link targets already exist as Pages.
+        //
+        // Doing this once lets us resolve outgoing edges without querying the
+        // Page table separately for every link.
+        const targetPages = await tx.page.findMany({
+          where: {
+            url: {
+              in: observedUrls,
+            },
+          },
+          select: {
+            id: true,
+            url: true,
+          },
+        });
+
+        const targetPageIds = new Map(
+          targetPages.map((page) => [page.url, page.id]),
+        );
+
+        // Store every link observed in this crawl.
+        //
+        // Existing edges preserve firstSeenAt while updating their latest
+        // observation. If the target Page already exists, connect it immediately.
+        //
+        // Deliberately sequential for now. It's unclear whether Promise.all() would
+        // improve performance here, since PostgreSQL executes statements on a
+        // transaction's connection sequentially, and it could introduce unnecessary
+        // concurrency complexity. Database concurrency is likely better achieved by
+        // running multiple crawler workers.
+        for (const link of links) {
+          const toPageId = targetPageIds.get(link.url) ?? null;
+          await tx.link.upsert({
+            where: {
+              fromPageId_toUrl: {
+                fromPageId: pageUpsert.id,
+                toUrl: link.url,
+              },
+            },
+            create: {
+              fromPageId: pageUpsert.id,
+              toPageId,
+              toUrl: link.url,
+              anchorTexts: link.anchorTexts,
+              firstSeenAt: fetchedAt,
+              lastSeenAt: fetchedAt,
+              isPresent: true,
+            },
+            update: {
+              toPageId,
+              anchorTexts: link.anchorTexts,
+              lastSeenAt: fetchedAt,
+              isPresent: true,
+            },
+          });
+        }
+
+        // Any previously present edge that was not observed in this successful
+        // crawl has disappeared.
+        //
+        // Preserve lastSeenAt: it records the last time the edge actually existed.
+        await tx.link.updateMany({
+          where: {
+            fromPageId: pageUpsert.id,
+            isPresent: true,
+            toUrl: {
+              notIn: observedUrls,
+            },
+          },
+          data: {
+            isPresent: false,
+          },
+        });
+
+        // Ensure newly discovered PRIMARY pages are scheduled for crawling.
+        //
+        // Existing jobs are left unchanged, preserving their original discovery
+        // provenance and current scheduling state.
+        await enqueuePrimaryLinks(tx, observedUrls, pageUpsert.id);
+
+        return pageUpsert;
+      },
+    );
 
     const finishedAt = new Date();
 
@@ -185,6 +221,21 @@ async function main(): Promise<void> {
     const error = e instanceof Error ? e.message : String(e);
     const erroredAt = new Date();
 
+    const isRetryable =
+      httpStatus === null ||
+      httpStatus === 408 ||
+      httpStatus === 429 ||
+      httpStatus >= 500;
+
+    const attemptCount = await prisma.crawlAttempt.count({
+      where: {
+        jobId: job.id,
+      },
+    });
+
+    const shouldRetry = isRetryable && attemptCount < 3;
+    const retryDelayMs = attemptCount === 1 ? ONE_MINUTE : 5 * ONE_MINUTE;
+
     await prisma.crawlAttempt.update({
       where: {
         id: attempt.id,
@@ -199,13 +250,32 @@ async function main(): Promise<void> {
       where: {
         id: job.id,
       },
-      data: {
-        status: "FAILED",
-        finishedAt: erroredAt,
-      },
+      data: shouldRetry
+        ? {
+            status: "PENDING",
+            startedAt: null,
+            finishedAt: null,
+            scheduledAt: new Date(erroredAt.getTime() + retryDelayMs),
+          }
+        : {
+            status: "FAILED",
+            finishedAt: erroredAt,
+          },
     });
 
-    console.error(`Crawl failed for ${job.url}: ${error}`);
+    if (shouldRetry) {
+      console.warn(
+        `Crawl attempt ${attemptCount} failed for ${job.url}; retry scheduled: ${error}`,
+      );
+    } else if (isRetryable) {
+      console.error(
+        `Crawl failed after ${attemptCount} attempts for ${job.url}; retry limit reached: ${error}`,
+      );
+    } else {
+      console.error(
+        `Crawl failed with a non-retryable error for ${job.url}: ${error}`,
+      );
+    }
   }
 }
 

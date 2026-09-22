@@ -2,6 +2,27 @@
 A search engine experiment
 
 
+---
+
+## Required `.env` variables
+
+For anyone thinking of forking this project:
+
+```text
+# PostgreSQL connection URL
+DATABASE_URL
+
+# A crawler shouldn't arrive at servers wearing a fake moustache and no name
+# tag. Send a descriptive User-Agent with a way to identify/contact the operator.
+CRAWLER_USER_AGENT="GreylistBot/0.1 (+[your project/contact URL here])"
+
+```
+
+TODO: Respect `robots.txt`
+
+
+---
+
 Okay, for v0.1: 
 
 Rules of the system:
