@@ -6,6 +6,7 @@ import { ONE_MINUTE } from "./constants.js";
 import { CRAWLER_USER_AGENT } from "./config.js";
 import { CrawlPermission } from "./constants.js";
 import { isCrawlAllowed } from "./robots/getRobotsPolicy.js";
+import { waitForHostRequest } from "./politeness/waitForHostRequest.js";
 
 import type { Prisma } from "@greylist/database";
 

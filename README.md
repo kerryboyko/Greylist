@@ -20,6 +20,8 @@ CRAWLER_USER_AGENT="GreylistBot/0.1 (+[your project/contact URL here])"
 
 Greylist identifies itself with a configurable User-Agent and respects `robots.txt` before crawling pages.
 
+TODO: No two Greylist HTTP requests to the same host may begin within a configurable minimum interval, regardless of which worker makes them. (That means the coordination belongs in PostgreSQL, not process memory.)
+
 ---
 
 Okay, for v0.1: 

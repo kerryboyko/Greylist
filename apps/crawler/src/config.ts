@@ -9,3 +9,19 @@ if (!process.env.CRAWLER_USER_AGENT) {
 }
 
 export const CRAWLER_USER_AGENT = process.env.CRAWLER_USER_AGENT;
+
+const crawlerMinHostIntervalMs = Number(
+  process.env.CRAWLER_MIN_HOST_INTERVAL_MS,
+);
+
+if (
+  !Number.isInteger(crawlerMinHostIntervalMs) ||
+  crawlerMinHostIntervalMs < 0
+) {
+  throw new Error(
+    "CRAWLER_MIN_HOST_INTERVAL_MS must be a non-negative integer",
+  );
+}
+
+export const CRAWLER_MIN_HOST_INTERVAL_MS =
+  crawlerMinHostIntervalMs;

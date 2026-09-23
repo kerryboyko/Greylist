@@ -193,3 +193,12 @@ model CrawlAttempt {
   @@index([pageId])
   @@index([startedAt])
 }
+
+model CrawlHost {
+  hostname String @id
+
+  nextRequestAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

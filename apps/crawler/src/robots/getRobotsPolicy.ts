@@ -1,6 +1,8 @@
 import { CRAWLER_USER_AGENT } from "../config.js";
 import robotsParser, { type Robot } from "robots-parser";
 import { CrawlPermission, RobotsPolicyResult } from "../constants.js";
+import { waitForHostRequest } from "../politeness/waitForHostRequest.js";
+
 
 export async function isCrawlAllowed(url: string): Promise<CrawlPermission> {
   const result = await getRobotsPolicy(url);
@@ -20,6 +22,7 @@ export async function getRobotsPolicy(
   const pageUrl = new URL(url);
   const robotsUrl = new URL("/robots.txt", pageUrl.origin);
   try {
+    await waitForHostRequest(robotsUrl.toString());
     const response = await fetch(robotsUrl, {
       headers: {
         "User-Agent": CRAWLER_USER_AGENT,
