@@ -4,6 +4,8 @@ import { parseWikipediaResponse } from "./parsers/wikipediaParser.js";
 import { enqueuePrimaryLinks } from "./queue/enqueuePrimaryLinks.js";
 import { ONE_MINUTE } from "./constants.js";
 import { CRAWLER_USER_AGENT } from "./config.js";
+import { CrawlPermission } from "./constants.js";
+import { isCrawlAllowed } from "./robots/getRobotsPolicy.js";
 
 import type { Prisma } from "@greylist/database";
 
@@ -13,6 +15,47 @@ async function main(): Promise<void> {
   const job = await claimCrawlJob();
   if (!job) {
     console.info(`No crawl jobs available`);
+    return;
+  }
+
+  // Robots.txt permissions check.
+  const crawlPermission = await isCrawlAllowed(job.url);
+
+  console.log(`Robots permission for ${job.url}: ${crawlPermission}`);
+
+  if (crawlPermission === CrawlPermission.DENY) {
+    await prisma.crawlJob.update({
+      where: {
+        id: job.id,
+      },
+      data: {
+        status: "CANCELLED",
+        finishedAt: new Date(),
+      },
+    });
+
+    console.log(`Crawl denied by robots.txt for ${job.url}`);
+    return;
+  }
+
+  if (crawlPermission === CrawlPermission.DELAY) {
+    const delayedUntil = new Date(Date.now() + 5 * ONE_MINUTE);
+
+    await prisma.crawlJob.update({
+      where: {
+        id: job.id,
+      },
+      data: {
+        status: "PENDING",
+        startedAt: null,
+        scheduledAt: delayedUntil,
+      },
+    });
+
+    console.log(
+      `Crawl delayed by robots.txt for ${job.url} until ${delayedUntil.toISOString()}`,
+    );
+
     return;
   }
 
