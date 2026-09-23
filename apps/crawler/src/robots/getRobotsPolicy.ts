@@ -3,7 +3,6 @@ import robotsParser, { type Robot } from "robots-parser";
 import { CrawlPermission, RobotsPolicyResult } from "../constants.js";
 import { waitForHostRequest } from "../politeness/waitForHostRequest.js";
 
-
 export async function isCrawlAllowed(url: string): Promise<CrawlPermission> {
   const result = await getRobotsPolicy(url);
 

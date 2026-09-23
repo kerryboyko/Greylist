@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Generated Prisma client
+packages/database/generated/
+
+# Build / test output
+dist/
+coverage/
+
+# Package manager
+pnpm-lock.yaml

@@ -8,8 +8,5 @@ declare module "robots-parser" {
     getPreferredHost(): string | null;
   }
 
-  export default function robotsParser(
-    url: string,
-    robotstxt: string,
-  ): Robot;
+  export default function robotsParser(url: string, robotstxt: string): Robot;
 }

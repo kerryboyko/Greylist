@@ -4,7 +4,9 @@
   "private": true,
   "description": "",
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devEngines": {
     "packageManager": {
@@ -17,6 +19,7 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^26.6.1",
+    "prettier": "^3.9.8",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"

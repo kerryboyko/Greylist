@@ -23,5 +23,4 @@ if (
   );
 }
 
-export const CRAWLER_MIN_HOST_INTERVAL_MS =
-  crawlerMinHostIntervalMs;
+export const CRAWLER_MIN_HOST_INTERVAL_MS = crawlerMinHostIntervalMs;
