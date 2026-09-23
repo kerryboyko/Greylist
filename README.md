@@ -18,8 +18,7 @@ CRAWLER_USER_AGENT="GreylistBot/0.1 (+[your project/contact URL here])"
 
 ```
 
-TODO: Respect `robots.txt`
-
+Greylist identifies itself with a configurable User-Agent and respects `robots.txt` before crawling pages.
 
 ---
 
