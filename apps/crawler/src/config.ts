@@ -32,3 +32,16 @@ if (!Number.isInteger(crawlerRobotsCacheTtlMs) || crawlerRobotsCacheTtlMs < 0) {
 }
 
 export const CRAWLER_ROBOTS_CACHE_TTL_MS = crawlerRobotsCacheTtlMs;
+
+const crawlerRecrawlIntervalMs = Number(
+  process.env.CRAWLER_RECRAWL_INTERVAL_MS,
+);
+
+if (
+  !Number.isInteger(crawlerRecrawlIntervalMs) ||
+  crawlerRecrawlIntervalMs < 0
+) {
+  throw new Error("CRAWLER_RECRAWL_INTERVAL_MS must be a non-negative integer");
+}
+
+export const CRAWLER_RECRAWL_INTERVAL_MS = crawlerRecrawlIntervalMs;

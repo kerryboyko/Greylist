@@ -3,7 +3,7 @@ import { claimCrawlJob } from "./queue/claimCrawlJob.js";
 import { parseWikipediaResponse } from "./parsers/wikipediaParser.js";
 import { enqueuePrimaryLinks } from "./queue/enqueuePrimaryLinks.js";
 import { ONE_MINUTE } from "./constants.js";
-import { CRAWLER_USER_AGENT } from "./config.js";
+import { CRAWLER_USER_AGENT, CRAWLER_RECRAWL_INTERVAL_MS } from "./config.js";
 import { CrawlPermission } from "./constants.js";
 import { isCrawlAllowed } from "./robots/getRobotsPolicy.js";
 import { waitForHostRequest } from "./politeness/waitForHostRequest.js";
@@ -234,35 +234,40 @@ async function main(): Promise<void> {
         // provenance and current scheduling state.
         await enqueuePrimaryLinks(tx, observedUrls, pageUpsert.id);
 
+        const finishedAt = new Date();
+
+        await tx.crawlAttempt.update({
+          where: {
+            id: attempt.id,
+          },
+          data: {
+            httpStatus: response.status,
+            contentType: response.headers.get("content-type"),
+            finishedAt,
+            pageId: pageUpsert.id,
+          },
+        });
+
+        const nextCrawlAt = new Date(Date.now() + CRAWLER_RECRAWL_INTERVAL_MS);
+
+        await tx.crawlJob.update({
+          where: {
+            id: job.id,
+          },
+          data: {
+            status: "PENDING",
+            reason: "RECRAWL",
+            scheduledAt: nextCrawlAt,
+            startedAt: null,
+            finishedAt: null,
+          },
+        });
+
         return pageUpsert;
       },
     );
 
-    const finishedAt = new Date();
-
-    await prisma.crawlAttempt.update({
-      where: {
-        id: attempt.id,
-      },
-      data: {
-        httpStatus: response.status,
-        contentType: response.headers.get("content-type"),
-        finishedAt,
-        pageId: page.id,
-      },
-    });
-
     console.info(`Stored page ${page.id} for ${page.url}`);
-
-    await prisma.crawlJob.update({
-      where: {
-        id: job.id,
-      },
-      data: {
-        status: "COMPLETED",
-        finishedAt,
-      },
-    });
   } catch (e: unknown) {
     const error = e instanceof Error ? e.message : String(e);
     const erroredAt = new Date();

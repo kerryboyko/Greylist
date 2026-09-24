@@ -121,7 +121,6 @@ model Link {
 enum CrawlJobStatus {
   PENDING
   RUNNING
-  COMPLETED
   FAILED
   CANCELLED
 }
