@@ -24,3 +24,11 @@ if (
 }
 
 export const CRAWLER_MIN_HOST_INTERVAL_MS = crawlerMinHostIntervalMs;
+
+const crawlerRobotsCacheTtlMs = Number(process.env.CRAWLER_ROBOTS_CACHE_TTL_MS);
+
+if (!Number.isInteger(crawlerRobotsCacheTtlMs) || crawlerRobotsCacheTtlMs < 0) {
+  throw new Error("CRAWLER_ROBOTS_CACHE_TTL_MS must be a non-negative integer");
+}
+
+export const CRAWLER_ROBOTS_CACHE_TTL_MS = crawlerRobotsCacheTtlMs;

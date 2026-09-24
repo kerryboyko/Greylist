@@ -71,7 +71,6 @@ async function main(): Promise<void> {
   );
 
   try {
-
     await waitForHostRequest(job.url);
 
     const response = await fetch(job.url, {

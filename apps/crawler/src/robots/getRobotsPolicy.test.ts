@@ -1,9 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { prisma } from "@greylist/database";
 import { CrawlPermission, RobotsPolicyResult } from "../constants.js";
 import { getRobotsPolicy, isCrawlAllowed } from "./getRobotsPolicy.js";
 
 describe("getRobotsPolicy", () => {
+  beforeEach(async () => {
+    await prisma.crawlHost.deleteMany({
+      where: {
+        hostname: "example.com",
+      },
+    });
+  });
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -123,4 +130,68 @@ describe("getRobotsPolicy", () => {
       expect(result).toBe(CrawlPermission.DELAY);
     },
   );
+  it("reuses a cached robots.txt policy without fetching it again", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        `
+          User-agent: *
+          Disallow: /private
+        `,
+        { status: 200 },
+      ),
+    );
+
+    const first = await isCrawlAllowed("https://example.com/public/page");
+
+    const second = await isCrawlAllowed("https://example.com/public/page");
+
+    expect(first).toBe(CrawlPermission.ALLOW);
+    expect(second).toBe(CrawlPermission.ALLOW);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+  it("reuses a cached missing robots.txt without fetching it again", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 404 }));
+
+    const first = await isCrawlAllowed("https://example.com/public/page");
+
+    const second = await isCrawlAllowed("https://example.com/public/page");
+
+    expect(first).toBe(CrawlPermission.ALLOW);
+    expect(second).toBe(CrawlPermission.ALLOW);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+  it("refetches robots.txt when the cached policy has expired", async () => {
+    await prisma.crawlHost.create({
+      data: {
+        hostname: "example.com",
+        nextRequestAt: new Date(0),
+        robotsTxt: `
+        User-agent: *
+        Disallow: /old
+      `,
+        robotsStatus: 200,
+        robotsFetchedAt: new Date(Date.now() - 2000),
+        robotsExpiresAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        `
+          User-agent: *
+          Disallow: /new
+        `,
+        { status: 200 },
+      ),
+    );
+
+    const result = await isCrawlAllowed("https://example.com/public/page");
+
+    expect(result).toBe(CrawlPermission.ALLOW);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
 });

@@ -199,6 +199,11 @@ model CrawlHost {
 
   nextRequestAt DateTime
 
+  robotsTxt       String?
+  robotsStatus    Int?
+  robotsFetchedAt DateTime?
+  robotsExpiresAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
