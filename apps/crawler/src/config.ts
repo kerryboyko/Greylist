@@ -45,3 +45,11 @@ if (
 }
 
 export const CRAWLER_RECRAWL_INTERVAL_MS = crawlerRecrawlIntervalMs;
+
+const crawlerJobTimeoutMs = Number(process.env.CRAWLER_JOB_TIMEOUT_MS);
+
+if (!Number.isInteger(crawlerJobTimeoutMs) || crawlerJobTimeoutMs <= 0) {
+  throw new Error("CRAWLER_JOB_TIMEOUT_MS must be a positive integer");
+}
+
+export const CRAWLER_JOB_TIMEOUT_MS = crawlerJobTimeoutMs;
