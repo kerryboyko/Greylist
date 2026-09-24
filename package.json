@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "typecheck:crawler": "tsc --noEmit -p apps/crawler/tsconfig.json"
   },
   "devEngines": {
     "packageManager": {

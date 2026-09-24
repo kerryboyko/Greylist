@@ -71,6 +71,9 @@ async function main(): Promise<void> {
   );
 
   try {
+
+    await waitForHostRequest(job.url);
+
     const response = await fetch(job.url, {
       headers: {
         "User-Agent": CRAWLER_USER_AGENT,

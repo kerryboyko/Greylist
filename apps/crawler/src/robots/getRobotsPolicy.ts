@@ -22,6 +22,7 @@ export async function getRobotsPolicy(
   const robotsUrl = new URL("/robots.txt", pageUrl.origin);
   try {
     await waitForHostRequest(robotsUrl.toString());
+
     const response = await fetch(robotsUrl, {
       headers: {
         "User-Agent": CRAWLER_USER_AGENT,

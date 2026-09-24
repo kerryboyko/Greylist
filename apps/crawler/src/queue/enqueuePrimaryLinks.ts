@@ -14,18 +14,16 @@ export async function enqueuePrimaryLinks(
         reason = PRIMARY
         discoveredFromPageId = current page
         */
-
-  for (const url of urls) {
-    await tx.crawlJob.upsert({
-      where: {
-        url,
-      },
-      create: {
-        url,
-        reason: "PRIMARY",
-        discoveredFromPageId,
-      },
-      update: {},
-    });
+  if (urls.length === 0) {
+    return;
   }
+
+  await tx.crawlJob.createMany({
+    data: urls.map((url) => ({
+      url,
+      reason: "PRIMARY",
+      discoveredFromPageId,
+    })),
+    skipDuplicates: true,
+  });
 }
