@@ -2,13 +2,13 @@ import { prisma } from "@greylist/database";
 import { CRAWLER_JOB_TIMEOUT_MS } from "../config.js";
 
 export async function claimCrawlJob() {
-// Prisma does not currently expose PostgreSQL's FOR UPDATE SKIP LOCKED.
-// We use a raw query here so multiple crawler workers can atomically claim
-// different eligible jobs without blocking or claiming the same job.
-//
-// PENDING jobs are eligible once scheduledAt has passed.
-// RUNNING jobs are eligible for recovery once their worker lease has expired.
-// Normal pending work takes precedence over stale-job recovery.
+  // Prisma does not currently expose PostgreSQL's FOR UPDATE SKIP LOCKED.
+  // We use a raw query here so multiple crawler workers can atomically claim
+  // different eligible jobs without blocking or claiming the same job.
+  //
+  // PENDING jobs are eligible once scheduledAt has passed.
+  // RUNNING jobs are eligible for recovery once their worker lease has expired.
+  // Normal pending work takes precedence over stale-job recovery.
   const jobs = await prisma.$queryRaw<
     Array<{
       id: bigint;

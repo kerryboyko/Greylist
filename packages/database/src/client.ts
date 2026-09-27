@@ -4,6 +4,7 @@ import { PrismaClient } from "../generated/prisma/client.js";
 
 config({
   path: new URL("../../../.env", import.meta.url),
+  quiet: true,
 });
 
 const connectionString = process.env.DATABASE_URL;
